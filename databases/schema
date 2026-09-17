@@ -1,0 +1,2 @@
+-- Reference schema; the Flask app creates these tables automatically.
+-- See backend/database.py for the complete SQLite schema.
