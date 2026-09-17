@@ -1,0 +1,30 @@
+from flask import Blueprint,request,jsonify
+from database import get_db
+from auth import token_required
+blood_bp=Blueprint("blood",__name__,url_prefix="/api/blood")
+COMPAT={
+"O-":["O-"],"O+":["O-","O+"],"A-":["O-","A-"],"A+": ["O-","O+","A-","A+"],
+"B-":["O-","B-"],"B+":["O-","O+","B-","B+"],
+"AB-":["O-","A-","B-","AB-"],"AB+":["O-","O+","A-","A+","B-","B+","AB-","AB+"]
+}
+@blood_bp.get("/compatible/<group>")
+@token_required()
+def compatible(payload,group):
+    group=group.upper()
+    if group not in COMPAT:return jsonify({"error":"invalid blood group"}),400
+    conn=get_db();ph=",".join("?"*len(COMPAT[group]))
+    rows=conn.execute(f"SELECT * FROM blood_inventory WHERE blood_group IN ({ph}) AND units>0",COMPAT[group]).fetchall();conn.close()
+    return jsonify({"patient_group":group,"compatible_donor_groups":COMPAT[group],"availability":[dict(r) for r in rows]})
+
+@blood_bp.get("/inventory")
+@token_required()
+def inventory(payload):
+    conn=get_db();rows=conn.execute("SELECT * FROM blood_inventory ORDER BY blood_group,hospital").fetchall();conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@blood_bp.post("/inventory")
+@token_required(["admin","doctor"])
+def add(payload):
+    d=request.get_json(silent=True) or {}
+    conn=get_db();cur=conn.execute("INSERT INTO blood_inventory(blood_group,units,hospital,location) VALUES(?,?,?,?)",(d["blood_group"].upper(),int(d["units"]),d["hospital"],d.get("location","")));conn.commit();conn.close()
+    return jsonify({"message":"inventory added","id":cur.lastrowid}),201
