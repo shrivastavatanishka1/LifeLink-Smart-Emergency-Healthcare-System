@@ -1,0 +1,29 @@
+from flask import Blueprint,request,jsonify
+from database import get_db
+from auth import token_required
+alerts_bp=Blueprint("alerts",__name__,url_prefix="/api/alerts")
+
+@alerts_bp.post("")
+@token_required()
+def create(payload):
+    d=request.get_json(silent=True) or {}
+    conn=get_db()
+    cur=conn.execute("INSERT INTO alerts(user_id,alert_type,message,latitude,longitude) VALUES(?,?,?,?,?)",(payload["sub"],d.get("alert_type","emergency"),d.get("message","Emergency detected"),d.get("latitude"),d.get("longitude")))
+    conn.commit();conn.close()
+    return jsonify({"message":"Emergency alert created","alert_id":cur.lastrowid}),201
+
+@alerts_bp.get("")
+@token_required()
+def listing(payload):
+    conn=get_db()
+    if payload["role"] in ("doctor","caregiver","admin"):
+        rows=conn.execute("SELECT a.*,u.name,u.blood_group,u.emergency_contact FROM alerts a JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100").fetchall()
+    else:
+        rows=conn.execute("SELECT * FROM alerts WHERE user_id=? ORDER BY id DESC LIMIT 50",(payload["sub"],)).fetchall()
+    conn.close(); return jsonify([dict(r) for r in rows])
+
+@alerts_bp.patch("/<int:alert_id>/acknowledge")
+@token_required(["doctor","caregiver","admin"])
+def ack(payload,alert_id):
+    conn=get_db();conn.execute("UPDATE alerts SET status='acknowledged' WHERE id=?",(alert_id,));conn.commit();conn.close()
+    return jsonify({"message":"Alert acknowledged"})
