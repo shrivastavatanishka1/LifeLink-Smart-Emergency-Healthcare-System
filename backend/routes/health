@@ -1,0 +1,23 @@
+from flask import Blueprint,request,jsonify
+from database import get_db
+from auth import token_required
+health_bp=Blueprint("health",__name__,url_prefix="/api/health")
+
+@health_bp.post("/readings")
+@token_required()
+def add(payload):
+    d=request.get_json(silent=True) or {}
+    def n(k):
+        return float(d[k]) if d.get(k) not in (None,"") else None
+    conn=get_db()
+    cur=conn.execute("""INSERT INTO health_readings
+    (user_id,heart_rate,spo2,temperature,accel_x,accel_y,accel_z,fall_detected)
+    VALUES (?,?,?,?,?,?,?,?)""",(payload["sub"],n("heart_rate"),n("spo2"),n("temperature"),n("accel_x"),n("accel_y"),n("accel_z"),1 if d.get("fall_detected") else 0))
+    conn.commit();conn.close()
+    return jsonify({"message":"Reading saved","reading_id":cur.lastrowid}),201
+
+@health_bp.get("/readings")
+@token_required()
+def readings(payload):
+    conn=get_db(); rows=conn.execute("SELECT * FROM health_readings WHERE user_id=? ORDER BY id DESC LIMIT 50",(payload["sub"],)).fetchall(); conn.close()
+    return jsonify([dict(r) for r in rows])
